@@ -1,0 +1,57 @@
+# ─── Compiled Binary ───────────────────────────────────────────────────────────
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ─── Generated Icon Files (regenerate via: go run gen_icon.go) ────────────────
+pln-logo.ico
+app.rc
+app_windows.syso
+
+# ─── Go Build Artifacts ────────────────────────────────────────────────────────
+*.test
+*.out
+vendor/
+
+# ─── Output / Hasil Capture ────────────────────────────────────────────────────
+output/
+*/output/
+*.jpg
+# Pengecualian: aset gambar aplikasi TIDAK diabaikan
+!pln-logo.png
+!icon-pln-icon-plus.png
+!buyme-a-coffee.jpeg
+
+# ─── Data SID (bisa berisi data sensitif) ─────────────────────────────────────
+# Hapus tanda # di bawah jika SID Anda bersifat rahasia:
+# sid_list.txt
+
+# ─── IDE & Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.editorconfig
+
+# ─── OS ────────────────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ─── Logs & Temp ───────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+
+# ─── File yang WAJIB di-commit (jangan pernah diabaikan) ──────────────────────
+# go.mod       ← dependency definition
+# go.sum       ← checksum, penting untuk reproducible build
+# *.go         ← semua source code
+# build.bat    ← build script
+# README.md    ← dokumentasi
+# sid_list.txt ← boleh di-commit jika tidak sensitif

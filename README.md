@@ -134,10 +134,5 @@ Proyek ini dibuat untuk keperluan internal **PLN Icon Plus — EOS Aceh Barat Da
 
 ---
 
-## Donasi / Support
-
-Jika proyek ini membantu pekerjaan Anda, pertimbangkan untuk berdonasi:
-
-**ZIAUL KAMAL** — Bank Aceh · `09502200034703`
 
 *(QR tersedia di tombol ☕ Buy Me a Coffee di dalam aplikasi)*

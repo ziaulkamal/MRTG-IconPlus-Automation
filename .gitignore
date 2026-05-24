@@ -68,4 +68,4 @@ server/tracker_data.json
 # *.go         ← semua source code (kecuali tracking_config.go)
 # build.bat    ← build script
 # README.md    ← dokumentasi
-# sid_list.txt ← boleh di-commit jika tidak sensitif
+# sid_list.txt ← SENSITIF, sudah diabaikan di atas

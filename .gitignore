@@ -48,10 +48,18 @@ Desktop.ini
 *.tmp
 *.bak
 
+# ─── Konfigurasi Sensitif (JANGAN di-commit) ──────────────────────────────────
+# Berisi URL server, password master, dan versi app.
+# Salin dari tracking_config.example.go lalu isi nilainya secara lokal.
+tracking_config.go
+
+# Server tracking — berisi data pengguna, jangan di-commit
+server/tracker_data.json
+
 # ─── File yang WAJIB di-commit (jangan pernah diabaikan) ──────────────────────
 # go.mod       ← dependency definition
 # go.sum       ← checksum, penting untuk reproducible build
-# *.go         ← semua source code
+# *.go         ← semua source code (kecuali tracking_config.go)
 # build.bat    ← build script
 # README.md    ← dokumentasi
 # sid_list.txt ← boleh di-commit jika tidak sensitif

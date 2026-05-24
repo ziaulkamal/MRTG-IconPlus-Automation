@@ -10,18 +10,18 @@
 
 | Fitur | Keterangan |
 |---|---|
-| 🔐 Login fleksibel | Via SID atau username/password |
-| 🎯 Single / Multiple Capture | Satu SID atau banyak SID dari file `.txt` |
+| 🔐 Login fleksibel | Via kredensial internal |
+| 🎯 Single / Multiple Capture | Satu ID atau banyak dari file `.txt` |
 | 📅 Date Picker | Kalender interaktif — Full Month atau Custom Range |
 | ⚡ Parallel Capture | Hingga 10 worker Chrome serentak |
-| 🏷️ Deteksi Tipe SID | Otomatis mendeteksi Backhaul / METRONET / INTERNET dari judul chart |
+| 🏷️ Deteksi Tipe Layanan | Otomatis mendeteksi tipe layanan dari judul chart |
 | 📄 Generate Laporan DOCX | Dari template `.docx` dengan placeholder otomatis |
-| 📊 Laporan Bulanan | 2 SID per halaman, diurutkan: Backhaul → INTERNET → METRONET |
-| 📰 Laporan Harian | Per hari: semua chart + Tiket Open/Close otomatis dari data tiket |
-| 🎫 Parser Tiket | Mendukung format CSV dan raw text, distribusi per tanggal buka/tutup |
-| 💾 Auto-save | Output `[SID]_[DD-MM-YYYY].jpg` atau `[SID]_[MM-YYYY].jpg` |
-| 🕐 Riwayat Capture | Log sesi tersimpan di `%TEMP%`, bisa re-generate laporan kapan saja |
-| 🔌 Cek Koneksi | Splash screen + verifikasi ke server MRTG saat startup |
+| 📊 Laporan Bulanan | 2 layanan per halaman, diurutkan berdasarkan tipe |
+| 📰 Laporan Harian | Per hari: semua chart + Tiket Open/Close otomatis |
+| 🎫 Parser Tiket | Mendukung format CSV dan raw text |
+| 💾 Auto-save | Output gambar per ID per tanggal |
+| 🕐 Riwayat Capture | Log sesi tersimpan lokal, bisa re-generate laporan kapan saja |
+| 🔌 Cek Koneksi | Splash screen + verifikasi ke server saat startup |
 | 🪟 Native Dialog | File & folder picker Windows Explorer asli |
 | 👥 User Tracking | Jumlah pengguna aktif ditampilkan di sidebar |
 | 🛡️ Master Panel | Admin tersembunyi: lihat MAC, IP lokasi, GPS, block/unblock perangkat dari jauh |
@@ -42,10 +42,14 @@
 ### Langkah Build
 
 ```batch
-# 1. Unduh dependency
+# 1. Salin file konfigurasi
+copy tracking_config.example.go tracking_config.go
+# Edit tracking_config.go — isi URL server dan password
+
+# 2. Unduh dependency
 go mod tidy
 
-# 2. Build (tanpa console window)
+# 3. Build (tanpa console window)
 set CGO_ENABLED=1
 set PATH=C:\msys64\mingw64\bin;%PATH%
 go build -ldflags="-H windowsgui" -o mrtg_automation.exe .
@@ -63,13 +67,13 @@ Output: `mrtg_automation.exe`
 ### 1. Capture Grafik
 
 1. Jalankan `mrtg_automation.exe`
-2. Aplikasi cek koneksi ke `mrtg.iconpln.co.id`
+2. Aplikasi cek koneksi ke server MRTG
 3. Isi form:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  1. Login      → SID atau Username/Password              │
-│  2. Capture    → Single (1 SID) atau Multiple (file)     │
+│  1. Login      → Kredensial internal                     │
+│  2. Capture    → Single atau Multiple (dari file)        │
 │  3. Date Range → Full Month (YYYY/MM) atau Custom Range  │
 │  4. Output     → Pilih folder penyimpanan                │
 │  5. Worker     → Normal (1) atau Multi-Process (2–10)    │
@@ -96,14 +100,18 @@ Laporan juga bisa di-generate ulang kapan saja via **🕐 Riwayat Capture**.
 
 ---
 
-## Format File SID (`sid_list.txt`)
+## Format File Daftar Layanan
+
+File berisi daftar ID layanan yang akan di-capture — **satu ID per baris**.
 
 ```
 # Komentar diawali tanda pagar
-231202003123
-231202003130
-231303001276
+[ID_LAYANAN_1]
+[ID_LAYANAN_2]
+[ID_LAYANAN_3]
 ```
+
+> ⚠️ File ini bersifat **sensitif** — jangan di-commit ke repository. Sudah terdaftar di `.gitignore`.
 
 ---
 
@@ -112,16 +120,14 @@ Laporan juga bisa di-generate ulang kapan saja via **🕐 Riwayat Capture**.
 ### Opsi 1 — CSV (direkomendasikan)
 
 ```csv
-TICKET_ID,SID,TIPE,TGL_BUKA,JAM_BUKA,DURASI,DESKRIPSI,TGL_TUTUP,JAM_TUTUP,NAMA_CUSTOMER
-RWR2C3N9,231202002130,METRONET,2026-04-14,10:12,4.830,PENYAMBUNGAN KABEL,2026-04-17,14:25,SEKRETARIAT MPU
-EM26N5NF,231202002146,METRONET,2026-02-02,08:00,2.500,PERBAIKAN,2026-02-05,15:30,PKK
+TICKET_ID,ID_LAYANAN,TIPE,TGL_BUKA,JAM_BUKA,DURASI,DESKRIPSI,TGL_TUTUP,JAM_TUTUP,NAMA_CUSTOMER
+[TICKET_ID],[ID_LAYANAN],METRONET,2026-04-14,10:12,4.830,DESKRIPSI GANGGUAN,2026-04-17,14:25,NAMA CUSTOMER
 ```
 
 ### Opsi 2 — Raw Text (spasi sebagai pemisah)
 
 ```
-RWR2C3N9 231202002130 METRONET 2026-04-14 10:12 4.830 PENYAMBUNGAN KABEL 2026-04-17 14:25 SEKRETARIAT MPU
-EM26N5NF 231202002146 METRONET 2026-02-02 08:00 2.500 PERBAIKAN 2026-02-05 15:30 PKK
+[TICKET_ID] [ID_LAYANAN] METRONET 2026-04-14 10:12 4.830 DESKRIPSI GANGGUAN 2026-04-17 14:25 NAMA CUSTOMER
 ```
 
 > Format terdeteksi **otomatis**. Tiket open → dikelompokkan di tanggal buka. Tiket close → di tanggal tutup.
@@ -144,24 +150,9 @@ Output: `Template_Laporan_Bulanan_SAMPLE.docx` dan `Template_Laporan_Harian_SAMP
 |---|---|---|
 | `{{BULAN}}` | Bulanan & Harian | Nama bulan huruf besar — `MEI` |
 | `{{TAHUN}}` | Bulanan & Harian | Tahun — `2026` |
-| `{{TANGGAL_MULAI}}` | Harian | Tanggal awal — `01/02/2026` |
-| `{{TANGGAL_AKHIR}}` | Harian | Tanggal akhir — `28/02/2026` |
 | `{{SID_CONTENT}}` | **Wajib keduanya** | Konten chart + tiket (auto-generated) |
 
 > `{{SID_CONTENT}}` harus berada di **paragraf sendiri** — satu baris, tidak boleh ada teks lain di baris yang sama.
-
----
-
-## Nama File Output
-
-```
-# Laporan Harian
-231202003123_01-02-2026.jpg
-231202003123_02-02-2026.jpg
-
-# Laporan Bulanan
-231202003123_02-2026.jpg
-```
 
 ---
 
@@ -169,28 +160,31 @@ Output: `Template_Laporan_Bulanan_SAMPLE.docx` dan `Template_Laporan_Harian_SAMP
 
 ```
 mrtg/
-├── mrtg_automation.go      # Core automation + worker pool + deteksi tipe SID
-├── mrtg_gui.go             # GUI layout utama (Fyne)
-├── report.go               # Generate laporan DOCX (Bulanan & Harian)
-├── splash.go               # Splash screen + cek koneksi
-├── history.go              # Riwayat capture + dialog data tiket
-├── datepicker.go           # Kalender interaktif
-├── tracking_config.go      # URL server tracking + password master + versi app
-├── telemetry.go            # Client heartbeat + deteksi MAC + cek blocked
-├── master_panel.go         # UI admin panel (user list, block/unblock)
-├── filepicker_windows.go   # Native Windows file/folder dialog
-├── filepicker_other.go     # Fallback Fyne dialog (non-Windows)
-├── platform_windows.go     # Maximize window on Windows
-├── platform_other.go       # Stub untuk non-Windows
-├── gen_template/           # Utility generate sample template DOCX
-├── server/                 # Tracking server (deploy ke VPS)
-│   ├── main.go             # HTTP server: heartbeat, count, users, block/unblock
+├── mrtg_automation.go          # Core automation + worker pool + deteksi tipe layanan
+├── mrtg_gui.go                 # GUI layout utama (Fyne)
+├── report.go                   # Generate laporan DOCX (Bulanan & Harian)
+├── splash.go                   # Splash screen + cek koneksi
+├── history.go                  # Riwayat capture + dialog data tiket
+├── datepicker.go               # Kalender interaktif
+├── tracking_config.example.go  # Template konfigurasi tracking (salin & isi)
+├── telemetry.go                # Client heartbeat + deteksi MAC + cek blocked
+├── master_panel.go             # UI admin panel (user list, block/unblock)
+├── filepicker_windows.go       # Native Windows file/folder dialog
+├── filepicker_other.go         # Fallback Fyne dialog (non-Windows)
+├── platform_windows.go         # Maximize window on Windows
+├── platform_other.go           # Stub untuk non-Windows
+├── gen_template/               # Utility generate sample template DOCX
+├── server/                     # Tracking server (deploy ke VPS)
+│   ├── main.go                 # HTTP server: heartbeat, count, users, block/unblock
 │   └── go.mod
-├── go.mod / go.sum         # Go module
-├── pln-logo.png            # Logo PLN
-├── icon-pln-icon-plus.png  # Logo PLN Icon Plus
-└── buyme-a-coffee.jpeg     # QR donasi
+├── go.mod / go.sum             # Go module
+├── pln-logo.png                # Logo PLN
+├── icon-pln-icon-plus.png      # Logo PLN Icon Plus
+└── buyme-a-coffee.jpeg         # QR donasi
 ```
+
+> File-file berikut **tidak disertakan** di repository karena bersifat sensitif:
+> `tracking_config.go` · `sid_list.txt` · `server/tracker_data.json`
 
 ---
 
@@ -202,7 +196,7 @@ Setiap sesi capture otomatis dicatat di:
 %TEMP%\mrtg_capture_history.json
 ```
 
-Berisi: waktu proses, folder output, jumlah SID, rentang tanggal, tipe laporan, daftar SID.
+Berisi: waktu proses, folder output, jumlah layanan, rentang tanggal, tipe laporan.
 Maksimal **100 entri** terakhir. Bisa dilihat & di-generate ulang via **🕐 Riwayat Capture** di sidebar.
 
 ---
@@ -211,7 +205,7 @@ Maksimal **100 entri** terakhir. Bisa dilihat & di-generate ulang via **🕐 Riw
 
 ### Cara Kerja
 
-Setiap kali aplikasi dibuka, klien mengirim **heartbeat** ke server tracking setiap 60 detik.
+Setiap kali aplikasi dibuka, klien mengirim **heartbeat** ke server tracking setiap 15 detik.
 Server mencatat MAC address, IP, lokasi (kota, negara, ISP, koordinat GPS via ip-api.com).
 
 Jumlah pengguna aktif ditampilkan di bagian bawah sidebar: **👥 N aktif**.
@@ -221,9 +215,9 @@ Jumlah pengguna aktif ditampilkan di bagian bawah sidebar: **👥 N aktif**.
 Klik angka **👥** di sidebar → masukkan password master → panel terbuka.
 
 Panel menampilkan:
-- MAC address perangkat
+- MAC address fisik perangkat
 - Alamat IP dan lokasi (kota, negara, ISP)
-- Koordinat GPS (dari ip-api.com)
+- Koordinat GPS
 - Waktu terakhir aktif dan versi aplikasi
 - Tombol **🚫 Block** / **✅ Unblock** per perangkat
 
@@ -238,27 +232,23 @@ scp -r server/ user@vps:/opt/mrtg-tracker/
 # 2. Build di VPS
 cd /opt/mrtg-tracker && go build -o tracker .
 
-# 3. Jalankan (gunakan systemd atau screen)
+# 3. Jalankan dengan systemd
 MASTER_KEY=passwordrahasia ./tracker
 ```
 
-Server berjalan di port **8787**.
-
 ### Konfigurasi Klien
 
-Edit [tracking_config.go](tracking_config.go):
+Salin `tracking_config.example.go` menjadi `tracking_config.go` lalu isi:
 
 ```go
 const (
-    trackingServerURL = "http://IP_VPS_ANDA:8787"
-    trackingMasterPwd = "passwordrahasia"  // harus sama dengan MASTER_KEY
-    appVersion        = "1.0.0"
+    trackingServerURL = "http://IP_VPS_ANDA:24001"
+    trackingMasterPwd = "passwordrahasia"
+    appVersion        = "1.1.0"
 )
 ```
 
-Lalu build ulang aplikasi.
-
-> **Catatan keamanan:** Jalankan server di balik reverse proxy (Nginx/Caddy) dengan HTTPS untuk produksi.
+> **Catatan:** `tracking_config.go` tidak akan ter-push ke GitHub (sudah ada di `.gitignore`).
 
 ---
 

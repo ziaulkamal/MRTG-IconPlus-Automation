@@ -27,9 +27,11 @@ output/
 !icon-pln-icon-plus.png
 !buyme-a-coffee.jpeg
 
-# ─── Data SID (bisa berisi data sensitif) ─────────────────────────────────────
-# Hapus tanda # di bawah jika SID Anda bersifat rahasia:
-# sid_list.txt
+# ─── Data SID / Layanan (SENSITIF — wajib diabaikan) ──────────────────────────
+sid_list.txt
+*.sid
+sid_*/
+*_sid.txt
 
 # ─── IDE & Editor ──────────────────────────────────────────────────────────────
 .vscode/

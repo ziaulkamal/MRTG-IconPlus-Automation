@@ -4,6 +4,10 @@
 *.so
 *.dylib
 
+# Hasil build server Linux
+server/tracker
+server/tracker-linux
+
 # ─── Generated Icon Files (regenerate via: go run gen_icon.go) ────────────────
 pln-logo.ico
 app.rc

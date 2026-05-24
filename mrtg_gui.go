@@ -517,7 +517,7 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 		showAboutDialog(w)
 	})
 
-	verLabel := canvas.NewText("Versi 1.0.0", color.NRGBA{R: 150, G: 170, B: 200, A: 255})
+	verLabel := canvas.NewText("Versi "+appVersion, color.NRGBA{R: 150, G: 170, B: 200, A: 255})
 	verLabel.TextSize = 11
 	verLabel.Alignment = fyne.TextAlignCenter
 

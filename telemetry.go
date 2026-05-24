@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -41,12 +42,32 @@ func GetActiveCount() int {
 
 // ── MAC address ──────────────────────────────────────────────────────────────
 
-// getMACAddress returns the first non-loopback hardware MAC on the system.
+// virtualPrefixes adalah nama-nama interface virtual yang harus dilewati.
+var virtualPrefixes = []string{
+	"docker", "veth", "virbr", "vmnet", "vbox",
+	"utun", "tun", "tap", "br-", "lo", "vEthernet",
+	"isatap", "teredo", "6to4",
+}
+
+func isVirtualInterface(name string) bool {
+	lower := strings.ToLower(name)
+	for _, prefix := range virtualPrefixes {
+		if strings.HasPrefix(lower, strings.ToLower(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+// getMACAddress returns the physical hardware MAC address (Ethernet/WiFi),
+// skipping virtual, loopback, and tunnel interfaces.
 func getMACAddress() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "unknown"
 	}
+
+	// Pass 1: cari interface yang up + punya IP + bukan virtual
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagLoopback != 0 {
 			continue
@@ -54,11 +75,35 @@ func getMACAddress() string {
 		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
+		if isVirtualInterface(iface.Name) {
+			continue
+		}
 		mac := iface.HardwareAddr.String()
-		if mac != "" && mac != "<nil>" {
+		if len(mac) < 11 { // MAC valid minimal "xx:xx:xx:xx:xx:xx"
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			if strings.Contains(addr.String(), ".") { // punya IPv4
+				return mac
+			}
+		}
+	}
+
+	// Pass 2: fallback — ambil MAC non-virtual apapun yang tersedia
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if isVirtualInterface(iface.Name) {
+			continue
+		}
+		mac := iface.HardwareAddr.String()
+		if len(mac) >= 11 {
 			return mac
 		}
 	}
+
 	return "unknown"
 }
 
@@ -134,7 +179,7 @@ func startTelemetry(w fyne.Window) {
 			return
 		}
 
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			blocked := sendBeat()

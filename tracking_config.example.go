@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 // Salin file ini menjadi tracking_config.go lalu isi nilai yang sesuai.

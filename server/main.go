@@ -19,7 +19,7 @@ import (
 const (
 	port            = ":24001"
 	dataFile        = "tracker_data.json"
-	inactiveTimeout = 3 * time.Minute // client considered offline after this
+	inactiveTimeout = 45 * time.Second // client considered offline after this
 )
 
 func masterKey() string {

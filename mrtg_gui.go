@@ -574,7 +574,7 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 				label = fmt.Sprintf("👥 %d aktif", n)
 			}
 			fyne.Do(func() { userCountTxt.Text = label; userCountTxt.Refresh() })
-			time.Sleep(30 * time.Second)
+			time.Sleep(15 * time.Second)
 		}
 	}()
 

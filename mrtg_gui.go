@@ -1088,18 +1088,121 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 					TotalFiles: total,
 					HasError:   captureErr != nil && !wasCancelled,
 					Cancelled:  wasCancelled,
+					IsMonthly:  cfg.IsMonthly,
+					SIDs:       cfg.SIDs,
 				})
 
 				if !wasCancelled {
-					doneMsg := "Semua capture selesai!\n\nBuka folder hasil sekarang?\n" + outDir
 					if captureErr != nil {
-						doneMsg = "Capture selesai dengan beberapa error.\n\nTetap buka folder hasil?\n" + outDir
-					}
-					dialog.ShowConfirm("Selesai", doneMsg, func(open bool) {
-						if open {
-							openOutputFolder(outDir)
+						// Ada error — hanya tawarkan buka folder
+						dialog.ShowConfirm("Selesai dengan Error",
+							"Capture selesai dengan beberapa error.\n\nBuka folder hasil?\n"+outDir,
+							func(open bool) {
+								if open {
+									openOutputFolder(outDir)
+								}
+							}, w)
+					} else {
+						// Sukses penuh — tawarkan generate laporan sekarang
+						modeTxt := "Harian"
+						if cfg.IsMonthly {
+							modeTxt = "Bulanan"
 						}
-					}, w)
+						openFolderBtn := widget.NewButton("📂  Buka Folder", func() {
+							openOutputFolder(outDir)
+						})
+						openFolderBtn.Importance = widget.LowImportance
+
+						genLaporanBtn := widget.NewButton("📄  Generate Laporan "+modeTxt, nil)
+						genLaporanBtn.Importance = widget.HighImportance
+
+						successIcon := canvas.NewText("✅", colLogOk)
+						successIcon.TextSize = 48
+						successIcon.Alignment = fyne.TextAlignCenter
+
+						msgTxt := canvas.NewText(
+							fmt.Sprintf("Semua capture selesai!  %d SID • %d file", len(cfg.SIDs), total),
+							colTxtGray,
+						)
+						msgTxt.TextSize = 13
+						msgTxt.Alignment = fyne.TextAlignCenter
+
+						folderTxt := canvas.NewText("📁  "+outDir, colNavy)
+						folderTxt.TextSize = 11
+						folderTxt.Alignment = fyne.TextAlignCenter
+
+						btnRow := container.NewGridWithColumns(2, openFolderBtn, genLaporanBtn)
+						content := container.NewVBox(
+							container.NewCenter(successIcon),
+							container.NewCenter(msgTxt),
+							container.NewCenter(folderTxt),
+							widget.NewSeparator(),
+							container.NewPadded(btnRow),
+						)
+
+						var successDlg dialog.Dialog
+						successDlg = dialog.NewCustom("🎉  Capture Selesai", "Tutup", content, w)
+						successDlg.Resize(fyne.NewSize(520, 260))
+
+						genLaporanBtn.OnTapped = func() {
+							successDlg.Hide()
+							pickDocx("Pilih Template DOCX (Laporan "+modeTxt+")", w, func(templatePath string) {
+								if templatePath == "" {
+									return
+								}
+
+								doGenerate := func(ticketData string) {
+									var reportName string
+									if cfg.IsMonthly {
+										reportName = fmt.Sprintf("Laporan_Bulanan_%s.docx",
+											cfg.StartDate.Format("01-2006"))
+									} else {
+										reportName = fmt.Sprintf("Laporan_Harian_%s_%s.docx",
+											cfg.StartDate.Format("02-01-2006"),
+											cfg.EndDate.Format("02-01-2006"))
+									}
+									outputDocx := filepath.Join(outDir, reportName)
+									rcfg := &ReportGenConfig{
+										TemplatePath: templatePath,
+										OutputPath:   outputDocx,
+										IsMonthly:    cfg.IsMonthly,
+										SIDs:         cfg.SIDs,
+										ImageDir:     outDir,
+										StartDate:    cfg.StartDate,
+										EndDate:      cfg.EndDate,
+										TicketData:   ticketData,
+									}
+									go func() {
+										if err := GenerateReport(rcfg); err != nil {
+											fyne.Do(func() {
+												dialog.ShowError(fmt.Errorf("Gagal generate laporan:\n%v", err), w)
+											})
+											return
+										}
+										fyne.Do(func() {
+											dialog.ShowConfirm(
+												"Laporan Berhasil",
+												"📄 Laporan berhasil dibuat!\n\n"+outputDocx+"\n\nBuka file sekarang?",
+												func(open bool) {
+													if open {
+														openFile(outputDocx)
+													}
+												}, w)
+										})
+									}()
+								}
+
+								// Laporan Harian wajib melalui dialog data tiket
+								if !cfg.IsMonthly {
+									fyne.Do(func() { pickTicketData(w, doGenerate) })
+								} else {
+									doGenerate("")
+								}
+							})
+						}
+
+						successDlg.Show()
+					}
 				}
 			}()
 		}

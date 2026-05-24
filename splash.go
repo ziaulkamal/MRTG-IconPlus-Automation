@@ -110,13 +110,15 @@ func runSplash(a fyne.App, w fyne.Window, mainContent fyne.CanvasObject) {
 
 		go func() {
 			err := checkConnectivity()
-			activity.Stop()
-			if err != nil {
-				loadingSection.Hide()
-				errorSection.Show()
-			} else {
-				w.SetContent(mainContent)
-			}
+			fyne.Do(func() {
+				activity.Stop()
+				if err != nil {
+					loadingSection.Hide()
+					errorSection.Show()
+				} else {
+					w.SetContent(mainContent)
+				}
+			})
 		}()
 	}
 

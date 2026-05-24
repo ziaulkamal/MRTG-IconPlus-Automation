@@ -22,6 +22,28 @@ func openOutputFolder(path string) {
 	}
 }
 
+// openFile opens a specific file using the default system application.
+func openFile(path string) {
+	switch runtime.GOOS {
+	case "darwin":
+		exec.Command("open", path).Start() //nolint:errcheck
+	default:
+		exec.Command("xdg-open", path).Start() //nolint:errcheck
+	}
+}
+
+// pickDocx shows the Fyne file-open dialog filtered to .docx files (non-Windows fallback).
+func pickDocx(title string, w fyne.Window, callback func(string)) {
+	dialog.ShowFileOpen(func(f fyne.URIReadCloser, err error) {
+		if err != nil || f == nil {
+			return
+		}
+		defer f.Close()
+		p := filepath.FromSlash(strings.TrimPrefix(f.URI().Path(), "/"))
+		callback(p)
+	}, w)
+}
+
 // pickFile shows the Fyne file-open dialog (fallback on non-Windows platforms).
 func pickFile(title string, w fyne.Window, callback func(string)) {
 	dialog.ShowFileOpen(func(f fyne.URIReadCloser, err error) {

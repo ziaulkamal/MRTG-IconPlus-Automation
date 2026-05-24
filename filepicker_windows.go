@@ -109,6 +109,37 @@ func openOutputFolder(path string) {
 	exec.Command("explorer", path).Start() //nolint:errcheck
 }
 
+// openFile opens a specific file using the default system application.
+func openFile(path string) {
+	exec.Command("cmd", "/c", "start", "", path).Start() //nolint:errcheck
+}
+
+// pickDocx shows the native Windows "Open File" dialog filtered to .docx files.
+func pickDocx(title string, _ fyne.Window, callback func(string)) {
+	go func() {
+		filter := utf16Filter(
+			"Dokumen Word (*.docx)", "*.docx",
+			"Semua File (*.*)", "*.*",
+		)
+		titlePtr, _ := syscall.UTF16PtrFromString(title)
+		fileBuf := make([]uint16, 32768)
+
+		ofn := openFileNameW{
+			lStructSize: uint32(unsafe.Sizeof(openFileNameW{})),
+			lpstrFilter: &filter[0],
+			lpstrTitle:  titlePtr,
+			lpstrFile:   &fileBuf[0],
+			nMaxFile:    uint32(len(fileBuf)),
+			flags:       0x00001000 | 0x00000008 | 0x00080000,
+		}
+
+		ret, _, _ := procGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
+		if ret != 0 {
+			callback(syscall.UTF16ToString(fileBuf))
+		}
+	}()
+}
+
 // pickFolder shows the native Windows folder browser dialog.
 // callback is called with the selected path; nothing happens if user cancels.
 func pickFolder(title string, _ fyne.Window, callback func(string)) {

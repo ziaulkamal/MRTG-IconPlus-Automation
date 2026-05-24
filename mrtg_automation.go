@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -156,6 +157,61 @@ func generateDateRange(start, end time.Time) []time.Time {
 // errCancelled adalah sentinel error untuk pembatalan oleh pengguna.
 var errCancelled = fmt.Errorf("dibatalkan")
 
+// detectSIDType menentukan tipe layanan dari teks judul chart MRTG.
+// Prioritas: Backhaul > METRONET > INTERNET
+func detectSIDType(title string) string {
+	lower := strings.ToLower(title)
+	if strings.Contains(lower, "backhaul") {
+		return "Backhaul"
+	}
+	if strings.Contains(lower, "metro") {
+		return "METRONET"
+	}
+	return "INTERNET"
+}
+
+// extractSIDTitle mengambil teks judul SID dari elemen SVG <text text-anchor="start">
+// yang memuat judul chart MRTG (mis. "231202003123 - Metro P2MP Diskominfo ...").
+func (m *MRTGAutomator) extractSIDTitle(ctx context.Context) string {
+	var title string
+	js := `(function() {
+		// Metode 1 (paling andal): elemen <text text-anchor="start"> di dalam SVG
+		// – ini persis elemen judul chart NVD3 yang dimuat halaman MRTG
+		try {
+			var els = document.querySelectorAll('text[text-anchor="start"]');
+			for (var i = 0; i < els.length; i++) {
+				var t = (els[i].textContent || '').trim();
+				if (t.length > 8) return t;
+			}
+		} catch(e) {}
+
+		// Metode 2: semua <text> di dalam <svg>, ambil yang terpanjang
+		try {
+			var svgTexts = document.querySelectorAll('svg text');
+			var best = '';
+			for (var i = 0; i < svgTexts.length; i++) {
+				var s = svgTexts[i].textContent.trim();
+				if (s.length > best.length) best = s;
+			}
+			if (best.length > 5) return best;
+		} catch(e) {}
+
+		// Metode 3: document.title sebagai fallback terakhir
+		return document.title || '';
+	})()`
+	chromedp.Run(ctx, chromedp.Evaluate(js, &title)) //nolint:errcheck
+	return title
+}
+
+// saveSIDMeta menyimpan peta SID→tipe ke file capture_meta.json di outputDir.
+func saveSIDMeta(outputDir string, meta map[string]string) {
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(outputDir, "capture_meta.json"), data, 0644) //nolint:errcheck
+}
+
 // captureTask adalah satu unit pekerjaan yang dikerjakan worker.
 type captureTask struct {
 	sid     string
@@ -229,9 +285,10 @@ func runCapture(userCtx context.Context, cfg *CaptureConfig, logFn func(string),
 	}
 	close(taskCh)
 
-	// ── Counter thread-safe ───────────────────────────────────────────────────
+	// ── Counter + metadata thread-safe ───────────────────────────────────────
 	var mu sync.Mutex
 	done, failed := 0, 0
+	sidMeta := make(map[string]string) // SID → tipe (Backhaul/METRONET/INTERNET)
 
 	safeLog := func(msg string) {
 		mu.Lock()
@@ -289,7 +346,20 @@ func runCapture(userCtx context.Context, cfg *CaptureConfig, logFn func(string),
 						progFn(d, t)
 					}
 				} else {
-					safeLog(fmt.Sprintf("  ✅ %s tersimpan", task.label))
+					// Ekstrak tipe SID dari halaman (hanya sekali per SID)
+					mu.Lock()
+					_, alreadyTyped := sidMeta[task.sid]
+					mu.Unlock()
+					if !alreadyTyped {
+						rawTitle := automator.extractSIDTitle(chrome.Ctx)
+						sidType := detectSIDType(rawTitle)
+						mu.Lock()
+						sidMeta[task.sid] = sidType
+						mu.Unlock()
+						safeLog(fmt.Sprintf("  ✅ %s tersimpan [%s]", task.label, sidType))
+					} else {
+						safeLog(fmt.Sprintf("  ✅ %s tersimpan", task.label))
+					}
 					d, t := addDone(false)
 					if progFn != nil {
 						progFn(d, t)
@@ -300,6 +370,12 @@ func runCapture(userCtx context.Context, cfg *CaptureConfig, logFn func(string),
 	}
 
 	wg.Wait()
+
+	// Simpan metadata tipe SID ke capture_meta.json
+	if len(sidMeta) > 0 {
+		saveSIDMeta(cfg.OutputDir, sidMeta)
+		logFn(fmt.Sprintf("💾 Metadata tipe SID disimpan (%d entri)", len(sidMeta)))
+	}
 
 	if userCtx.Err() != nil {
 		logFn("⛔ Capture dibatalkan oleh pengguna")

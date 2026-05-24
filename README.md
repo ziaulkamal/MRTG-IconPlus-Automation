@@ -1,6 +1,6 @@
 # MRTG Chart Automation
 
-**Automasi capture grafik MRTG untuk monitoring jaringan PLN Icon Plus.**
+**Automasi capture grafik MRTG + generate laporan DOCX untuk monitoring jaringan PLN Icon Plus.**
 
 > Developed by **ZIAUL KAMAL** — EOS Aceh Barat Daya
 
@@ -11,13 +11,17 @@
 | Fitur | Keterangan |
 |---|---|
 | 🔐 Login fleksibel | Via SID atau username/password |
-| 🎯 Single Capture | Satu SID target |
-| 📋 Multiple Capture | Banyak SID dari file `.txt` |
-| 📅 Date Picker | Kalender interaktif (Full Month / Custom Range) |
-| 💾 Auto-save | Output `[SID]_[DD-MM-YYYY].jpg` |
-| 🕐 Riwayat | Log capture tersimpan otomatis di `%TEMP%` |
+| 🎯 Single / Multiple Capture | Satu SID atau banyak SID dari file `.txt` |
+| 📅 Date Picker | Kalender interaktif — Full Month atau Custom Range |
+| ⚡ Parallel Capture | Hingga 10 worker Chrome serentak |
+| 🏷️ Deteksi Tipe SID | Otomatis mendeteksi Backhaul / METRONET / INTERNET dari judul chart |
+| 📄 Generate Laporan DOCX | Dari template `.docx` dengan placeholder otomatis |
+| 📊 Laporan Bulanan | 2 SID per halaman, diurutkan: Backhaul → INTERNET → METRONET |
+| 📰 Laporan Harian | Per hari: semua chart + Tiket Open/Close otomatis dari data tiket |
+| 🎫 Parser Tiket | Mendukung format CSV dan raw text, distribusi per tanggal buka/tutup |
+| 💾 Auto-save | Output `[SID]_[DD-MM-YYYY].jpg` atau `[SID]_[MM-YYYY].jpg` |
+| 🕐 Riwayat Capture | Log sesi tersimpan di `%TEMP%`, bisa re-generate laporan kapan saja |
 | 🔌 Cek Koneksi | Splash screen + verifikasi ke server MRTG saat startup |
-| 📂 Buka Folder | Shortcut buka hasil setelah capture selesai |
 | 🪟 Native Dialog | File & folder picker Windows Explorer asli |
 
 ---
@@ -39,11 +43,10 @@
 # 1. Unduh dependency
 go mod tidy
 
-# 2. Generate ikon exe (hanya sekali, atau jika pln-logo.png berubah)
-go run gen_icon.go
-
-# 3. Build
-build.bat
+# 2. Build (tanpa console window)
+set CGO_ENABLED=1
+set PATH=C:\msys64\mingw64\bin;%PATH%
+go build -ldflags="-H windowsgui" -o mrtg_automation.exe .
 ```
 
 Output: `mrtg_automation.exe`
@@ -55,9 +58,11 @@ Output: `mrtg_automation.exe`
 
 ## Cara Pakai
 
+### 1. Capture Grafik
+
 1. Jalankan `mrtg_automation.exe`
-2. Aplikasi akan cek koneksi ke `mrtg.iconpln.co.id`
-3. Isi form sesuai kebutuhan:
+2. Aplikasi cek koneksi ke `mrtg.iconpln.co.id`
+3. Isi form:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -65,27 +70,95 @@ Output: `mrtg_automation.exe`
 │  2. Capture    → Single (1 SID) atau Multiple (file)     │
 │  3. Date Range → Full Month (YYYY/MM) atau Custom Range  │
 │  4. Output     → Pilih folder penyimpanan                │
+│  5. Worker     → Normal (1) atau Multi-Process (2–10)    │
 │                                                          │
 │  ▶  Mulai Capture                                        │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### Format File SID (`sid_list.txt`)
+### 2. Generate Laporan
+
+Setelah capture selesai **tanpa error**, tombol **📄 Generate Laporan** muncul otomatis.
+Laporan juga bisa di-generate ulang kapan saja via **🕐 Riwayat Capture**.
+
+#### Laporan Bulanan
+1. Klik **📄 Generate Laporan**
+2. Pilih file template `.docx` (Bulanan)
+3. File laporan tersimpan di folder output capture
+
+#### Laporan Harian
+1. Klik **📄 Generate Laporan**
+2. Pilih file template `.docx` (Harian)
+3. **Wajib** input data tiket — paste dari sistem tiket (CSV atau raw text)
+4. Klik **✅ Generate Laporan**
+
+---
+
+## Format File SID (`sid_list.txt`)
 
 ```
 # Komentar diawali tanda pagar
 231202003123
 231202003130
 231303001276
-# dst...
 ```
 
-### Nama File Output
+---
+
+## Format Data Tiket
+
+### Opsi 1 — CSV (direkomendasikan)
+
+```csv
+TICKET_ID,SID,TIPE,TGL_BUKA,JAM_BUKA,DURASI,DESKRIPSI,TGL_TUTUP,JAM_TUTUP,NAMA_CUSTOMER
+RWR2C3N9,231202002130,METRONET,2026-04-14,10:12,4.830,PENYAMBUNGAN KABEL,2026-04-17,14:25,SEKRETARIAT MPU
+EM26N5NF,231202002146,METRONET,2026-02-02,08:00,2.500,PERBAIKAN,2026-02-05,15:30,PKK
+```
+
+### Opsi 2 — Raw Text (spasi sebagai pemisah)
 
 ```
-231202003123_01-06-2026.jpg
-231202003123_02-06-2026.jpg
-...
+RWR2C3N9 231202002130 METRONET 2026-04-14 10:12 4.830 PENYAMBUNGAN KABEL 2026-04-17 14:25 SEKRETARIAT MPU
+EM26N5NF 231202002146 METRONET 2026-02-02 08:00 2.500 PERBAIKAN 2026-02-05 15:30 PKK
+```
+
+> Format terdeteksi **otomatis**. Tiket open → dikelompokkan di tanggal buka. Tiket close → di tanggal tutup.
+
+---
+
+## Template Laporan DOCX
+
+Generate template sample dengan:
+
+```batch
+go run ./gen_template
+```
+
+Output: `Template_Laporan_Bulanan_SAMPLE.docx` dan `Template_Laporan_Harian_SAMPLE.docx`
+
+### Placeholder yang didukung
+
+| Placeholder | Laporan | Diganti dengan |
+|---|---|---|
+| `{{BULAN}}` | Bulanan & Harian | Nama bulan huruf besar — `MEI` |
+| `{{TAHUN}}` | Bulanan & Harian | Tahun — `2026` |
+| `{{TANGGAL_MULAI}}` | Harian | Tanggal awal — `01/02/2026` |
+| `{{TANGGAL_AKHIR}}` | Harian | Tanggal akhir — `28/02/2026` |
+| `{{SID_CONTENT}}` | **Wajib keduanya** | Konten chart + tiket (auto-generated) |
+
+> `{{SID_CONTENT}}` harus berada di **paragraf sendiri** — satu baris, tidak boleh ada teks lain di baris yang sama.
+
+---
+
+## Nama File Output
+
+```
+# Laporan Harian
+231202003123_01-02-2026.jpg
+231202003123_02-02-2026.jpg
+
+# Laporan Bulanan
+231202003123_02-2026.jpg
 ```
 
 ---
@@ -94,23 +167,21 @@ Output: `mrtg_automation.exe`
 
 ```
 mrtg/
-├── mrtg_automation.go      # Core automation + CLI entry point
+├── mrtg_automation.go      # Core automation + worker pool + deteksi tipe SID
 ├── mrtg_gui.go             # GUI layout utama (Fyne)
+├── report.go               # Generate laporan DOCX (Bulanan & Harian)
 ├── splash.go               # Splash screen + cek koneksi
-├── about.go                # Dialog "Tentang" + "Buy Me a Coffee"
-├── datepicker.go           # Kalender interaktif (month & day picker)
-├── history.go              # Riwayat capture (baca/tulis JSON)
+├── history.go              # Riwayat capture + dialog data tiket
+├── datepicker.go           # Kalender interaktif
 ├── filepicker_windows.go   # Native Windows file/folder dialog
 ├── filepicker_other.go     # Fallback Fyne dialog (non-Windows)
 ├── platform_windows.go     # Maximize window on Windows
 ├── platform_other.go       # Stub untuk non-Windows
-├── gen_icon.go             # Generator ikon exe (jalankan sekali)
-├── build.bat               # Script build Windows
+├── gen_template/           # Utility generate sample template DOCX
 ├── go.mod / go.sum         # Go module
-├── pln-logo.png            # Logo PLN (ikon exe & sidebar)
-├── icon-pln-icon-plus.png  # Logo PLN Icon Plus (header aplikasi)
-├── buyme-a-coffee.jpeg     # QR donasi
-└── sid_list.txt            # Daftar SID (contoh / opsional)
+├── pln-logo.png            # Logo PLN
+├── icon-pln-icon-plus.png  # Logo PLN Icon Plus
+└── buyme-a-coffee.jpeg     # QR donasi
 ```
 
 ---
@@ -123,8 +194,8 @@ Setiap sesi capture otomatis dicatat di:
 %TEMP%\mrtg_capture_history.json
 ```
 
-Berisi: waktu proses, folder output, jumlah SID, rentang tanggal, total file.
-Bisa dilihat lewat **🕐 Riwayat Capture** di sidebar.
+Berisi: waktu proses, folder output, jumlah SID, rentang tanggal, tipe laporan, daftar SID.
+Maksimal **100 entri** terakhir. Bisa dilihat & di-generate ulang via **🕐 Riwayat Capture** di sidebar.
 
 ---
 
@@ -134,5 +205,4 @@ Proyek ini dibuat untuk keperluan internal **PLN Icon Plus — EOS Aceh Barat Da
 
 ---
 
-
-*(QR tersedia di tombol ☕ Buy Me a Coffee di dalam aplikasi)*
+*(QR donasi tersedia di tombol ☕ Buy Me a Coffee di dalam aplikasi)*

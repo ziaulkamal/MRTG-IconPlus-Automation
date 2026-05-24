@@ -23,6 +23,8 @@
 | 🕐 Riwayat Capture | Log sesi tersimpan di `%TEMP%`, bisa re-generate laporan kapan saja |
 | 🔌 Cek Koneksi | Splash screen + verifikasi ke server MRTG saat startup |
 | 🪟 Native Dialog | File & folder picker Windows Explorer asli |
+| 👥 User Tracking | Jumlah pengguna aktif ditampilkan di sidebar |
+| 🛡️ Master Panel | Admin tersembunyi: lihat MAC, IP lokasi, GPS, block/unblock perangkat dari jauh |
 
 ---
 
@@ -173,11 +175,17 @@ mrtg/
 ├── splash.go               # Splash screen + cek koneksi
 ├── history.go              # Riwayat capture + dialog data tiket
 ├── datepicker.go           # Kalender interaktif
+├── tracking_config.go      # URL server tracking + password master + versi app
+├── telemetry.go            # Client heartbeat + deteksi MAC + cek blocked
+├── master_panel.go         # UI admin panel (user list, block/unblock)
 ├── filepicker_windows.go   # Native Windows file/folder dialog
 ├── filepicker_other.go     # Fallback Fyne dialog (non-Windows)
 ├── platform_windows.go     # Maximize window on Windows
 ├── platform_other.go       # Stub untuk non-Windows
 ├── gen_template/           # Utility generate sample template DOCX
+├── server/                 # Tracking server (deploy ke VPS)
+│   ├── main.go             # HTTP server: heartbeat, count, users, block/unblock
+│   └── go.mod
 ├── go.mod / go.sum         # Go module
 ├── pln-logo.png            # Logo PLN
 ├── icon-pln-icon-plus.png  # Logo PLN Icon Plus
@@ -196,6 +204,61 @@ Setiap sesi capture otomatis dicatat di:
 
 Berisi: waktu proses, folder output, jumlah SID, rentang tanggal, tipe laporan, daftar SID.
 Maksimal **100 entri** terakhir. Bisa dilihat & di-generate ulang via **🕐 Riwayat Capture** di sidebar.
+
+---
+
+## User Tracking & Master Panel
+
+### Cara Kerja
+
+Setiap kali aplikasi dibuka, klien mengirim **heartbeat** ke server tracking setiap 60 detik.
+Server mencatat MAC address, IP, lokasi (kota, negara, ISP, koordinat GPS via ip-api.com).
+
+Jumlah pengguna aktif ditampilkan di bagian bawah sidebar: **👥 N aktif**.
+
+### Master Panel
+
+Klik angka **👥** di sidebar → masukkan password master → panel terbuka.
+
+Panel menampilkan:
+- MAC address perangkat
+- Alamat IP dan lokasi (kota, negara, ISP)
+- Koordinat GPS (dari ip-api.com)
+- Waktu terakhir aktif dan versi aplikasi
+- Tombol **🚫 Block** / **✅ Unblock** per perangkat
+
+Perangkat yang diblokir akan mendapat dialog "Akses Diblokir" saat aplikasi dibuka.
+
+### Deploy Server ke VPS
+
+```bash
+# 1. Upload folder server/ ke VPS
+scp -r server/ user@vps:/opt/mrtg-tracker/
+
+# 2. Build di VPS
+cd /opt/mrtg-tracker && go build -o tracker .
+
+# 3. Jalankan (gunakan systemd atau screen)
+MASTER_KEY=passwordrahasia ./tracker
+```
+
+Server berjalan di port **8787**.
+
+### Konfigurasi Klien
+
+Edit [tracking_config.go](tracking_config.go):
+
+```go
+const (
+    trackingServerURL = "http://IP_VPS_ANDA:8787"
+    trackingMasterPwd = "passwordrahasia"  // harus sama dengan MASTER_KEY
+    appVersion        = "1.0.0"
+)
+```
+
+Lalu build ulang aplikasi.
+
+> **Catatan keamanan:** Jalankan server di balik reverse proxy (Nginx/Caddy) dengan HTTPS untuk produksi.
 
 ---
 

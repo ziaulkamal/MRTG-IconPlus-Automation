@@ -474,6 +474,9 @@ func launchGUI() {
 }
 
 func buildMainLayout(w fyne.Window) fyne.CanvasObject {
+	// Start telemetry heartbeat (non-blocking).
+	startTelemetry(w)
+
 	// ── Sidebar ──────────────────────────────────────────────────────────────
 	sidebarBg := canvas.NewRectangle(colNavy)
 
@@ -547,7 +550,36 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 		widget.NewLabel(""), // spacer
 	)
 
+	// ── User count widget ────────────────────────────────────────────────────
+	userCountTxt := canvas.NewText("👥 — aktif", color.NRGBA{R: 130, G: 200, B: 130, A: 255})
+	userCountTxt.TextSize = 11
+	userCountTxt.Alignment = fyne.TextAlignCenter
+
+	userCountBtn := widget.NewButton("", func() {
+		showMasterPanelPrompt(w)
+	})
+	userCountBtn.Importance = widget.LowImportance
+
+	userCountStack := container.NewStack(
+		userCountBtn,
+		container.NewCenter(userCountTxt),
+	)
+
+	// Refresh user count label every 30 seconds.
+	go func() {
+		for {
+			n := GetActiveCount()
+			label := "👥 — aktif"
+			if n >= 0 {
+				label = fmt.Sprintf("👥 %d aktif", n)
+			}
+			fyne.Do(func() { userCountTxt.Text = label; userCountTxt.Refresh() })
+			time.Sleep(30 * time.Second)
+		}
+	}()
+
 	sidebarFooter := container.NewVBox(
+		container.NewCenter(userCountStack),
 		container.NewCenter(verLabel),
 		container.NewCenter(creditName),
 		container.NewCenter(creditUnit),

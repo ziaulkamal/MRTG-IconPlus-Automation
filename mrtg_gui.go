@@ -1020,6 +1020,16 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 		)
 		workerBox.Hide()
 
+		// DNS selector — pilih resolver alternatif jika DNS ISP sering error
+		dnsSel := widget.NewSelect(DNSPresetNames, func(_ string) {})
+		dnsSel.SetSelectedIndex(0) // default = sistem/ISP
+
+		dnsBox := container.NewVBox(
+			widget.NewLabelWithStyle("🌐 DNS Resolver", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			dnsSel,
+			widget.NewLabel("Ganti jika koneksi ke server MRTG sering timeout"),
+		)
+
 		var modeNormalCard, modeMultiCard *SelectCard
 		modeNormalCard = newSelectCard("🔄", "Normal", "1 Chrome, paling stabil", func() {
 			selectedWorkers = 1
@@ -1050,6 +1060,7 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 		modeContent := container.NewVBox(
 			container.NewGridWithColumns(2, modeNormalCard, modeMultiCard),
 			container.NewPadded(workerBox),
+			container.NewPadded(dnsBox),
 			container.NewPadded(sep2),
 			container.NewPadded(summaryLbl),
 		)
@@ -1057,6 +1068,7 @@ func buildMainLayout(w fyne.Window) fyne.CanvasObject {
 		// Goroutine capture — dipanggil setelah mode dipilih dan dikonfirmasi
 		launchCapture := func() {
 			cfg.Workers = selectedWorkers
+			cfg.DNS = DNSPresets[dnsSel.Selected]
 
 			captureCtx, captureCancel := context.WithCancel(context.Background())
 			currentCancel = captureCancel

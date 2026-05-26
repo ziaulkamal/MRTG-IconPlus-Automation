@@ -1,5 +1,8 @@
 package main
 
+// mrtg_automation.go — tipe data, helper, CLI, dan main.
+// Semua logika browser automation ada di mrtg_engine.go.
+
 import (
 	"bufio"
 	"context"
@@ -9,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -35,15 +37,14 @@ type CaptureConfig struct {
 	IsMonthly bool
 	// Workers = jumlah Chrome paralel; 0 atau 1 = sekuensial
 	Workers int
+	// DNS = URL DNS-over-HTTPS; kosong = pakai DNS sistem/ISP
+	// Contoh: "https://dns.google/dns-query" untuk Google DNS
+	DNS string
 }
 
 // MRTGAutomator menyimpan konfigurasi sesi Chrome
 type MRTGAutomator struct {
 	timeout time.Duration
-}
-
-func NewMRTGAutomator() *MRTGAutomator {
-	return &MRTGAutomator{timeout: 60 * time.Minute}
 }
 
 // ChromeContext membungkus lifecycle Chrome
@@ -54,94 +55,19 @@ type ChromeContext struct {
 
 func (cc *ChromeContext) Done() { cc.Cancel() }
 
-func (m *MRTGAutomator) setupChrome() *ChromeContext {
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", "new"),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.WindowSize(1920, 1080),
-	)
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	ctx, ctxCancel := chromedp.NewContext(allocCtx)
-	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, m.timeout)
-
-	return &ChromeContext{Ctx: timeoutCtx, Cancel: func() {
-		timeoutCancel()
-		ctxCancel()
-		allocCancel()
-	}}
+// captureTask adalah satu unit pekerjaan yang dikerjakan worker.
+type captureTask struct {
+	sid     string
+	startDT time.Time
+	endDT   time.Time
+	outFile string
+	label   string
 }
 
-func (m *MRTGAutomator) login(ctx context.Context, cfg *CaptureConfig) error {
-	username, password := cfg.Username, cfg.Password
-	if cfg.UseSID {
-		username = cfg.LoginSID
-		password = cfg.LoginSID
-	}
-	return chromedp.Run(ctx,
-		chromedp.Navigate(loginURL),
-		chromedp.WaitVisible(`input[name="username"]`, chromedp.ByQuery),
-		chromedp.SetValue(`input[name="username"]`, username, chromedp.ByQuery),
-		chromedp.SetValue(`input[name="password"]`, password, chromedp.ByQuery),
-		chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`body`, chromedp.ByQuery),
-		chromedp.Sleep(3*time.Second),
-	)
-}
+// errCancelled adalah sentinel error untuk pembatalan oleh pengguna.
+var errCancelled = fmt.Errorf("dibatalkan")
 
-// captureRange mengambil chart MRTG untuk rentang waktu startDT–endDT.
-// outputFile adalah path lengkap file output termasuk nama file.
-func (m *MRTGAutomator) captureRange(ctx context.Context, sid string, startDT, endDT time.Time, outputFile string) error {
-	startStr := startDT.Format("2006/01/02 15:04")
-	endStr := endDT.Format("2006/01/02 15:04")
-
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(graphBaseURL+sid),
-		chromedp.WaitVisible(`input[name="start"]`, chromedp.ByQuery),
-		chromedp.Sleep(1*time.Second),
-	); err != nil {
-		return fmt.Errorf("navigasi gagal: %w", err)
-	}
-
-	jsSetDate := fmt.Sprintf(`
-		(function() {
-			var s = document.querySelector('input[name="start"]');
-			var e = document.querySelector('input[name="end"]');
-			if (!s || !e) return false;
-			s.value = '%s'; e.value = '%s';
-			['change','input'].forEach(function(ev) {
-				s.dispatchEvent(new Event(ev, {bubbles:true}));
-				e.dispatchEvent(new Event(ev, {bubbles:true}));
-			});
-			return true;
-		})()
-	`, startStr, endStr)
-
-	var ok bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(jsSetDate, &ok)); err != nil || !ok {
-		return fmt.Errorf("set tanggal gagal")
-	}
-
-	if err := chromedp.Run(ctx,
-		chromedp.Click(`button[type="submit"].btn-success`, chromedp.ByQuery),
-		chromedp.WaitVisible(`div#linechart_core`, chromedp.ByQuery),
-		chromedp.WaitVisible(`div#nvd3-line`, chromedp.ByQuery),
-		chromedp.Sleep(3*time.Second),
-	); err != nil {
-		return fmt.Errorf("chart tidak muncul: %w", err)
-	}
-
-	var buf []byte
-	if err := chromedp.Run(ctx,
-		chromedp.Screenshot(`div#nvd3-line`, &buf, chromedp.ByQuery),
-	); err != nil {
-		return fmt.Errorf("screenshot gagal: %w", err)
-	}
-
-	return os.WriteFile(outputFile, buf, 0644)
-}
+// ─── Helper functions ─────────────────────────────────────────────────────────
 
 // generateDateRange menghasilkan slice tanggal dari start s/d end (inclusive)
 func generateDateRange(start, end time.Time) []time.Time {
@@ -153,9 +79,6 @@ func generateDateRange(start, end time.Time) []time.Time {
 	}
 	return dates
 }
-
-// errCancelled adalah sentinel error untuk pembatalan oleh pengguna.
-var errCancelled = fmt.Errorf("dibatalkan")
 
 // detectSIDType menentukan tipe layanan dari teks judul chart MRTG.
 // Prioritas: Backhaul > METRONET > INTERNET
@@ -170,13 +93,10 @@ func detectSIDType(title string) string {
 	return "INTERNET"
 }
 
-// extractSIDTitle mengambil teks judul SID dari elemen SVG <text text-anchor="start">
-// yang memuat judul chart MRTG (mis. "231202003123 - Metro P2MP Diskominfo ...").
+// extractSIDTitle mengambil teks judul SID dari elemen SVG chart MRTG.
 func (m *MRTGAutomator) extractSIDTitle(ctx context.Context) string {
 	var title string
 	js := `(function() {
-		// Metode 1 (paling andal): elemen <text text-anchor="start"> di dalam SVG
-		// – ini persis elemen judul chart NVD3 yang dimuat halaman MRTG
 		try {
 			var els = document.querySelectorAll('text[text-anchor="start"]');
 			for (var i = 0; i < els.length; i++) {
@@ -184,8 +104,6 @@ func (m *MRTGAutomator) extractSIDTitle(ctx context.Context) string {
 				if (t.length > 8) return t;
 			}
 		} catch(e) {}
-
-		// Metode 2: semua <text> di dalam <svg>, ambil yang terpanjang
 		try {
 			var svgTexts = document.querySelectorAll('svg text');
 			var best = '';
@@ -195,8 +113,6 @@ func (m *MRTGAutomator) extractSIDTitle(ctx context.Context) string {
 			}
 			if (best.length > 5) return best;
 		} catch(e) {}
-
-		// Metode 3: document.title sebagai fallback terakhir
 		return document.title || '';
 	})()`
 	chromedp.Run(ctx, chromedp.Evaluate(js, &title)) //nolint:errcheck
@@ -210,184 +126,6 @@ func saveSIDMeta(outputDir string, meta map[string]string) {
 		return
 	}
 	os.WriteFile(filepath.Join(outputDir, "capture_meta.json"), data, 0644) //nolint:errcheck
-}
-
-// captureTask adalah satu unit pekerjaan yang dikerjakan worker.
-type captureTask struct {
-	sid     string
-	startDT time.Time
-	endDT   time.Time
-	outFile string
-	label   string
-}
-
-// runCapture menjalankan seluruh proses otomasi dengan worker pool paralel.
-// userCtx → context pembatalan dari pengguna (tombol Batalkan di GUI)
-// logFn   → callback untuk output log (dipanggil dari banyak goroutine, mutex internal)
-// progFn  → callback progress (done, total); boleh nil
-func runCapture(userCtx context.Context, cfg *CaptureConfig, logFn func(string), progFn func(done, total int)) error {
-	if err := os.MkdirAll(cfg.OutputDir, 0755); err != nil {
-		return fmt.Errorf("gagal buat folder output: %w", err)
-	}
-
-	// ── Bangun daftar tugas ───────────────────────────────────────────────────
-	var tasks []captureTask
-	if cfg.IsMonthly {
-		startDT := time.Date(cfg.StartDate.Year(), cfg.StartDate.Month(), 1, 0, 0, 0, 0, time.Local)
-		endDT := time.Date(cfg.EndDate.Year(), cfg.EndDate.Month(), cfg.EndDate.Day(), 23, 59, 0, 0, time.Local)
-		periodLabel := fmt.Sprintf("%s – %s", startDT.Format("01/2006"), endDT.Format("02/01/2006"))
-		for _, sid := range cfg.SIDs {
-			sid := sid
-			tasks = append(tasks, captureTask{
-				sid:     sid,
-				startDT: startDT,
-				endDT:   endDT,
-				outFile: filepath.Join(cfg.OutputDir, fmt.Sprintf("%s_%s.jpg", sid, startDT.Format("01-2006"))),
-				label:   fmt.Sprintf("%s (bulanan %s)", sid, periodLabel),
-			})
-		}
-	} else {
-		dates := generateDateRange(cfg.StartDate, cfg.EndDate)
-		for _, sid := range cfg.SIDs {
-			sid := sid
-			for _, date := range dates {
-				date := date
-				startDT := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.Local)
-				endDT := time.Date(date.Year(), date.Month(), date.Day(), 23, 59, 0, 0, time.Local)
-				tasks = append(tasks, captureTask{
-					sid:     sid,
-					startDT: startDT,
-					endDT:   endDT,
-					outFile: filepath.Join(cfg.OutputDir, fmt.Sprintf("%s_%s.jpg", sid, date.Format("02-01-2006"))),
-					label:   fmt.Sprintf("%s_%s.jpg", sid, date.Format("02-01-2006")),
-				})
-			}
-		}
-	}
-
-	total := len(tasks)
-
-	// ── Tentukan jumlah worker ────────────────────────────────────────────────
-	workers := cfg.Workers
-	if workers <= 0 {
-		workers = 1
-	}
-	if workers > total {
-		workers = total
-	}
-
-	logFn(fmt.Sprintf("🚀 Memulai capture: %d tugas, %d worker paralel", total, workers))
-
-	// Distribusi tugas lewat channel buffered
-	taskCh := make(chan captureTask, total)
-	for _, t := range tasks {
-		taskCh <- t
-	}
-	close(taskCh)
-
-	// ── Counter + metadata thread-safe ───────────────────────────────────────
-	var mu sync.Mutex
-	done, failed := 0, 0
-	sidMeta := make(map[string]string) // SID → tipe (Backhaul/METRONET/INTERNET)
-
-	safeLog := func(msg string) {
-		mu.Lock()
-		logFn(msg)
-		mu.Unlock()
-	}
-	addDone := func(fail bool) (d, t int) {
-		mu.Lock()
-		defer mu.Unlock()
-		if fail {
-			failed++
-		}
-		done++
-		return done, total
-	}
-
-	// ── Spawn worker goroutines ───────────────────────────────────────────────
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-
-			automator := NewMRTGAutomator()
-			chrome := automator.setupChrome()
-			defer chrome.Done()
-
-			// Batalkan Chrome saat userCtx dibatalkan
-			go func() {
-				select {
-				case <-userCtx.Done():
-					chrome.Done()
-				case <-chrome.Ctx.Done():
-				}
-			}()
-
-			if err := automator.login(chrome.Ctx, cfg); err != nil {
-				safeLog(fmt.Sprintf("❌ Worker %d: login gagal: %v", workerID+1, err))
-				// Kosongkan tugas milik worker ini agar tidak diproses
-				for range taskCh {
-				}
-				return
-			}
-			safeLog(fmt.Sprintf("✅ Worker %d: login berhasil", workerID+1))
-
-			for task := range taskCh {
-				if userCtx.Err() != nil {
-					return
-				}
-
-				if err := automator.captureRange(chrome.Ctx, task.sid, task.startDT, task.endDT, task.outFile); err != nil {
-					safeLog(fmt.Sprintf("  ❌ %s: %v", task.label, err))
-					d, t := addDone(true)
-					if progFn != nil {
-						progFn(d, t)
-					}
-				} else {
-					// Ekstrak tipe SID dari halaman (hanya sekali per SID)
-					mu.Lock()
-					_, alreadyTyped := sidMeta[task.sid]
-					mu.Unlock()
-					if !alreadyTyped {
-						rawTitle := automator.extractSIDTitle(chrome.Ctx)
-						sidType := detectSIDType(rawTitle)
-						mu.Lock()
-						sidMeta[task.sid] = sidType
-						mu.Unlock()
-						safeLog(fmt.Sprintf("  ✅ %s tersimpan [%s]", task.label, sidType))
-					} else {
-						safeLog(fmt.Sprintf("  ✅ %s tersimpan", task.label))
-					}
-					d, t := addDone(false)
-					if progFn != nil {
-						progFn(d, t)
-					}
-				}
-			}
-		}(i)
-	}
-
-	wg.Wait()
-
-	// Simpan metadata tipe SID ke capture_meta.json
-	if len(sidMeta) > 0 {
-		saveSIDMeta(cfg.OutputDir, sidMeta)
-		logFn(fmt.Sprintf("💾 Metadata tipe SID disimpan (%d entri)", len(sidMeta)))
-	}
-
-	if userCtx.Err() != nil {
-		logFn("⛔ Capture dibatalkan oleh pengguna")
-		return errCancelled
-	}
-
-	logFn("\n══════════ Selesai ══════════")
-	logFn(fmt.Sprintf("✅ Berhasil : %d", done-failed))
-	if failed > 0 {
-		logFn(fmt.Sprintf("❌ Gagal    : %d", failed))
-	}
-	return nil
 }
 
 // readSIDsFromFile membaca daftar SID dari file (satu per baris, # untuk komentar)
@@ -414,6 +152,8 @@ func ask(sc *bufio.Scanner, label string) string {
 	sc.Scan()
 	return strings.TrimSpace(sc.Text())
 }
+
+// ─── CLI mode ─────────────────────────────────────────────────────────────────
 
 // runCLI menjalankan mode terminal interaktif
 func runCLI() {
@@ -511,6 +251,18 @@ func runCLI() {
 		log.Fatal("❌ Pilihan tidak valid")
 	}
 
+	// ── DNS ───────────────────────────────────────────────────────────────────
+	fmt.Println("\nDNS Resolver (pilih jika DNS ISP sering error):")
+	for i, name := range DNSPresetNames {
+		fmt.Printf("  [%d] %s\n", i, name)
+	}
+	dnsIdx := ask(sc, "Pilihan DNS (0=default): ")
+	idx := 0
+	fmt.Sscanf(dnsIdx, "%d", &idx)
+	if idx >= 0 && idx < len(DNSPresetNames) {
+		cfg.DNS = DNSPresets[DNSPresetNames[idx]]
+	}
+
 	// ── Output ────────────────────────────────────────────────────────────────
 	fmt.Println("\nFolder penyimpanan chart:")
 	fmt.Println("  Contoh Windows : C:\\Users\\Asani\\Desktop\\charts")
@@ -568,6 +320,14 @@ func runCLI() {
 		fmt.Printf("Total file  : %d  (%d SID × %d hari)\n", len(cfg.SIDs)*len(dates), len(cfg.SIDs), len(dates))
 		fmt.Printf("Format file : [SID]_[DD-MM-YYYY].jpg\n")
 	}
+	dnsDisplay := "Sistem/ISP (default)"
+	for _, name := range DNSPresetNames {
+		if DNSPresets[name] == cfg.DNS && cfg.DNS != "" {
+			dnsDisplay = name
+			break
+		}
+	}
+	fmt.Printf("DNS         : %s\n", dnsDisplay)
 	fmt.Printf("Output dir  : %s\n", cfg.OutputDir)
 	fmt.Printf("Worker      : %d (paralel)\n", cfg.Workers)
 	fmt.Println("────────────────────────────")
@@ -586,8 +346,6 @@ func runCLI() {
 }
 
 func main() {
-	// Jika tidak ada argumen → buka GUI
-	// Jika ada argumen apapun (--login, --user, dsb) → CLI
 	if len(os.Args) == 1 {
 		launchGUI()
 		return

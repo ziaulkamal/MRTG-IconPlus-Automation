@@ -49,6 +49,14 @@ Desktop.ini
 .AppleDouble
 .LSOverride
 
+# ─── Template & Laporan yang di-generate (jangan di-commit) ──────────────────
+# Semua dokumen laporan & template tidak perlu masuk repo
+*.pdf
+*.docx
+# File lock sementara Office (~$...)
+*.~$*
+~$*
+
 # ─── Logs & Temp ───────────────────────────────────────────────────────────────
 *.log
 *.tmp

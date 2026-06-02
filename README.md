@@ -205,8 +205,10 @@ Maksimal **100 entri** terakhir. Bisa dilihat & di-generate ulang via **🕐 Riw
 
 ### Cara Kerja
 
-Setiap kali aplikasi dibuka, klien mengirim **heartbeat** ke server tracking setiap 15 detik.
+Setiap kali aplikasi dibuka, klien mengirim **heartbeat** ke server tracking setiap **15 detik**.
 Server mencatat MAC address, IP, lokasi (kota, negara, ISP, koordinat GPS via ip-api.com).
+
+Pengguna dianggap **offline** jika tidak ada heartbeat selama **45 detik** (misalnya aplikasi ditutup).
 
 Jumlah pengguna aktif ditampilkan di bagian bawah sidebar: **👥 N aktif**.
 
@@ -225,15 +227,54 @@ Perangkat yang diblokir akan mendapat dialog "Akses Diblokir" saat aplikasi dibu
 
 ### Deploy Server ke VPS
 
+**Opsi 1 — Cross-compile dari Windows (direkomendasikan, tidak perlu Go di VPS):**
+
+```powershell
+# Build binary Linux dari PC Windows
+cd server
+$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -o tracker-linux .
+
+# Upload ke VPS
+scp -P [PORT_SSH] tracker-linux user@IP_VPS:/opt/mrtg-tracker/tracker
+```
+
+**Opsi 2 — Build langsung di VPS:**
+
 ```bash
-# 1. Upload folder server/ ke VPS
 scp -r server/ user@vps:/opt/mrtg-tracker/
-
-# 2. Build di VPS
 cd /opt/mrtg-tracker && go build -o tracker .
+```
 
-# 3. Jalankan dengan systemd
-MASTER_KEY=passwordrahasia ./tracker
+**Jalankan sebagai systemd service (auto-start saat reboot):**
+
+```bash
+# Buat file service
+sudo nano /etc/systemd/system/mrtg-tracker.service
+```
+
+```ini
+[Unit]
+Description=MRTG Tracking Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/mrtg-tracker
+ExecStart=/opt/mrtg-tracker/tracker
+Environment=MASTER_KEY=passwordrahasia
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now mrtg-tracker
+sudo ufw allow 24001/tcp
 ```
 
 ### Konfigurasi Klien
